@@ -6,6 +6,15 @@
 	define('DEFAULT_NUM', '8002221222');
 	define('MAX_ATTACHMENT_SIZE', 25*(1024*1024));
 
+	$file = null;
+	if (DEBUG) {
+		$file = @tempnam('/var/tmp', 'sms.');
+		if (!$file) {
+			fail('STORE_INIT');
+		}
+		debug_log('File: ' . $file);
+	}
+
 	debug_log('INIT');
 	use PHPMailer\PHPMailer\PHPMailer;
 	use PHPMailer\PHPMailer\Exception;
@@ -18,14 +27,22 @@
 	if (!$raw) {
 		fail('READ');
 	}
+	if (DEBUG) {
+		if (!@file_put_contents($file . '.raw', print_r($raw, true))) {
+			fail('STORE_RAW');
+		}
+	}
 
 	debug_log('JSON');
-	$data = @json_decode($raw);
+	$data = json_decode($raw);
 	if (!$data || !is_object($data)) {
 		fail('JSON');
 	}
-	if (!DEBUG) {
-		unset($raw);
+	unset($raw);
+	if (DEBUG) {
+		if (!@file_put_contents($file . '.decoded', print_r($data, true))) {
+			fail('STORE_DECODED');
+		}
 	}
 
 	debug_log('FIND');
@@ -50,6 +67,9 @@
 	unset($msg);
 	cleanNum($sms, 'to');
 	cleanNum($sms, 'from');
+	if (!$sms['body']) {
+		$sms['body'] = ' ';
+	}
 
 	debug_log('FIND_MMS');
 	if ($sms['is_mms']) {
@@ -77,15 +97,16 @@
 			unset($msg);
 		}
 	}
-	if (!DEBUG) {
-		unset($data);
+	unset($data);
+	if (DEBUG) {
+		debug_log(print_r($sms, true));
+		if (!@file_put_contents($file, print_r($sms, true))) {
+			fail('STORE_PARSED');
+		}
 	}
 
 	debug_log('MAIL');
 	$mail = new PHPMailer();
-	if (DEBUG) {
-		$mail->SMTPDebug = 2;
-	}
 	$mail->setFrom($sms['from'] . '@' . FROM_DOMAIN, 'SMS ' . $sms['from_pretty']);
 	$mail->addAddress(TO_ADDR, TO_NAME);
 	$mail->Subject = 'SMS Message ' . $sms['from_pretty'] . ' => ' . $sms['to_pretty'];
@@ -121,30 +142,7 @@
 	unset($mail);
 
 	debug_log('CLEANUP');
-	if (!DEBUG) {
-		unset($sms);
-	}
-
-	if (DEBUG) {
-		debug_log('DEBUG');
-		debug_log(print_r($sms, true));
-		$file = @tempnam('/var/tmp', 'sms.');
-
-		if (!$file) {
-			fail('STORE_INIT');
-		}
-		debug_log('File: ' . $file);
-
-		if (!@file_put_contents($file . '.raw', print_r($raw, true))) {
-			fail('STORE_RAW');
-		}
-		if (!@file_put_contents($file . '.decoded', print_r($data, true))) {
-			fail('STORE_DECODED');
-		}
-		if (!@file_put_contents($file, print_r($sms, true))) {
-			fail('STORE_PARSED');
-		}
-	}
+	unset($sms);
 
 	function cleanNum(&$sms, $field) {
 		if (preg_match('/\d*(\d{3})(\d{3})(\d{4})\D*$/', $sms[$field], $matches)) {
