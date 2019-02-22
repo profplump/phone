@@ -1,7 +1,16 @@
 <?php
+	require_once 'sms.secrets';
 	define('DEBUG', true);
 	define('PARAMS', array('to', 'from', 'body', 'is_mms'));
 	define('PARAMS_MMS', array('url', 'file_name', 'mime_type', 'file_size'));
+	define('DEFAULT_NUM', '8002221222');
+
+	debug_log('INIT');
+	use PHPMailer\PHPMailer\PHPMailer;
+	use PHPMailer\PHPMailer\Exception;
+	require_once 'PHPMailer/src/Exception.php';
+	require_once 'PHPMailer/src/PHPMailer.php';
+	require_once 'PHPMailer/src/SMTP.php';
 
 	debug_log('READ');
 	$data = @file_get_contents('php://input');
@@ -62,6 +71,37 @@
 			unset($msg);
 		}
 	}
+
+	debug_log('CLEANUP');
+	if (preg_match('/\d*(\d{10})\D*$/', $sms['from'], $matches)) {
+		$sms['from'] = $matches[1];
+	} else {
+		$sms['from'] = DEFAULT_NUM;
+	}
+	if (preg_match('/\d*(\d{10})\D*$/', $sms['to'], $matches)) {
+		$sms['to'] = $matches[1];
+	} else {
+		$sms['to'] = DEFAULT_NUM;
+	}
+	unset($matches);
+
+	debug_log('MAIL');
+	$mail = new PHPMailer();
+	if (DEBUG) {
+		$mail->SMTPDebug = 2;
+	}
+	$mail->setFrom($sms['from'] . '@' . FROM_DOMAIN, 'SMS ' . $sms['from']);
+	$mail->addAddress(TO_ADDR, TO_NAME);
+	$mail->Subject = 'SMS Message ' . $sms['to'] . ' => ' . $sms['from'];
+	$mail->Body = $sms['body'];
+	foreach ($sms['media'] as $file) {
+		$mail->Body .= "\n\n" . $file['file_name'] . '(' . $file['mime_type'] . '): ' . $file['url'] . "\n";
+	}
+	if (!$mail->send()) {
+		debug_log('Mail error: ' . $mail->ErrorInfo);
+		fail('MAIL');
+	}
+	unset($mail);
 
 	if (DEBUG) {
 		debug_log('DEBUG');
